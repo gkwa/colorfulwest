@@ -1,0 +1,62 @@
+before:
+  hooks:
+  - go mod tidy
+  - go generate ./...
+builds:
+- env:
+  - CGO_ENABLED=0
+  goos:
+  - linux
+  - windows
+  - darwin
+  main: main.go
+  goarch:
+  - amd64
+  binary: colorfulwest
+  id: colorfulwest
+  ldflags:
+  - -s -w
+    -X "github.com/gkwa/colorfulwest/version.Version={{ .Version }}"
+    -X "github.com/gkwa/colorfulwest/version.Date={{ .CommitDate }}"
+    -X "github.com/gkwa/colorfulwest/version.GoVersion={{ .Env.GOVERSION }}"
+    -X "github.com/gkwa/colorfulwest/version.ShortGitSHA={{ .ShortCommit }}"
+    -X "github.com/gkwa/colorfulwest/version.FullGitSHA={{ .FullCommit }}"
+archives:
+- format: tar.gz
+  name_template: |-
+    colorfulwest_ {{- title .Os }}_ {{- if eq .Arch "amd64" }}x86_64
+                               {{- else if eq .Arch "386" }}i386
+                               {{- else }}
+                               {{ .Arch }}
+                               {{ end }}
+                               {{- if .Arm }}v{{ .Arm }}{{ end }}
+  format_overrides:
+  - goos: windows
+    format: zip
+checksum:
+  name_template: checksums.txt
+snapshot:
+  name_template: '{{ incpatch .Version }}-next'
+changelog:
+  sort: asc
+  filters:
+    exclude:
+    - '^docs:'
+    - '^test:'
+brews:
+- name: colorfulwest
+  directory: Formula
+  homepage: https://github.com/gkwa/colorfulwest
+  repository:
+    owner: gkwa
+    name: homebrew-tools
+    branch: main
+scoops:
+- name: colorfulwest
+  homepage: https://github.com/gkwa/colorfulwest
+  description: "Description of the colorfulwest project"
+  license: MIT
+  repository:
+    owner: gkwa
+    name: scoop-bucket
+    branch: master
