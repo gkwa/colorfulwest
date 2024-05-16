@@ -1,0 +1,5 @@
+---
+elasticsearch:
+  hosts:
+    3.98.219.30:
+      ansible_user: root

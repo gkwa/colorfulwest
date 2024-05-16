@@ -1,0 +1,217 @@
+- name: Elasticsearch certificate management and configuration
+  hosts: elasticsearch
+  become: yes
+
+  handlers:
+    - name: Restart Elasticsearch
+      ansible.builtin.service:
+        name: elasticsearch
+        state: restarted
+
+  vars:
+    master_nodes: []
+    elasticsearch_config_path: /etc/elasticsearch/elasticsearch.yml
+    elasticsearch_config_backup_path: /etc/elasticsearch/elasticsearch.yml.bak
+    cluster_name: my_cluster
+
+  tasks:
+    - name: Set log_path variable
+      ansible.builtin.set_fact:
+        log_path: '/var/log/elasticsearch/{{ cluster_name }}.log'
+
+    - name: Display the log_path
+      ansible.builtin.debug:
+        msg: 'Log path is {{ log_path }}'
+
+    - name: Get hostname
+      ansible.builtin.command: hostname
+      register: hostname_output
+
+    - name: Add hostname to master_nodes
+      ansible.builtin.set_fact:
+        master_nodes: '{{ master_nodes + [hostname_output.stdout] }}'
+
+    - name: Check if Elasticsearch configuration backup exists
+      ansible.builtin.stat:
+        path: '{{ elasticsearch_config_backup_path }}'
+      register: backup_file_stat
+
+    - name: Create backup of Elasticsearch configuration
+      ansible.builtin.copy:
+        src: '{{ elasticsearch_config_path }}'
+        dest: '{{ elasticsearch_config_backup_path }}'
+        remote_src: yes
+      when: not backup_file_stat.stat.exists
+
+    - name: Remove existing /etc/elasticsearch/elastic-stack-ca.p12 file
+      ansible.builtin.file:
+        path: /etc/elasticsearch/elastic-stack-ca.p12
+        state: absent
+
+    - name: Remove existing elastic-certificates.p12 file
+      ansible.builtin.file:
+        path: /etc/elasticsearch/elastic-certificates.p12
+        state: absent
+
+    - name: Generate new /etc/elasticsearch/elastic-stack-ca.p12 file
+      ansible.builtin.command: /usr/share/elasticsearch/bin/elasticsearch-certutil ca --out /etc/elasticsearch/elastic-stack-ca.p12 --pass MyPa55word
+      args:
+        creates: /etc/elasticsearch/elastic-stack-ca.p12
+
+    - name: Set permissions on /etc/elasticsearch/elastic-stack-ca.p12 file
+      ansible.builtin.file:
+        path: /etc/elasticsearch/elastic-stack-ca.p12
+        mode: '0400'
+        owner: elasticsearch
+        group: elasticsearch
+
+    - name: Assert the existence of elastic-stack-ca.p12 file
+      ansible.builtin.stat:
+        path: /etc/elasticsearch/elastic-stack-ca.p12
+      register: ca_file_stat
+
+    - name: Generate new /etc/elasticsearch/elastic-certificates.p12 file
+      ansible.builtin.command: /usr/share/elasticsearch/bin/elasticsearch-certutil cert --ca-pass MyPa55word --out /etc/elasticsearch/elastic-certificates.p12 --ca /etc/elasticsearch/elastic-stack-ca.p12 --pass MyPa55word
+      args:
+        creates: /etc/elasticsearch/elastic-certificates.p12
+
+    - name: Set permissions on /etc/elasticsearch/elastic-certificates.p12 file
+      ansible.builtin.file:
+        path: /etc/elasticsearch/elastic-certificates.p12
+        mode: '0400'
+        owner: elasticsearch
+        group: elasticsearch
+
+    - name: Fail if /etc/elasticsearch/elastic-stack-ca.p12 file does not exist
+      ansible.builtin.fail:
+        msg: 'The elastic-stack-ca.p12 file does not exist.'
+      when: not ca_file_stat.stat.exists
+
+    - name: Assert the existence of elastic-stack-ca.p12 file
+      ansible.builtin.stat:
+        path: /etc/elasticsearch/elastic-certificates.p12
+      register: cert_file_stat
+
+    - name: Fail if /etc/elasticsearch/elastic-certificates.p12 file does not exist
+      ansible.builtin.fail:
+        msg: 'The /etc/elasticsearch/elastic-certificates.p12 file does not exist.'
+      when: not cert_file_stat.stat.exists
+
+    - name: Enable Elasticsearch service
+      ansible.builtin.service:
+        name: elasticsearch
+        enabled: yes
+
+    # start flailing
+
+    - name: Create directory /opt/colorfulwest/
+      ansible.builtin.file:
+        path: /opt/colorfulwest/
+        state: directory
+        mode: '0700'
+
+    - name: Create clean.sh script
+      ansible.builtin.copy:
+        dest: /opt/colorfulwest/clean.sh
+        content: |
+          #!/bin/bash
+
+          set -x
+          set -u
+          set -e
+
+          # Get the list of keystore entries
+          keystore_entries=$(/usr/share/elasticsearch/bin/elasticsearch-keystore list)
+
+          # Loop over each entry
+          for entry in $keystore_entries; do
+            # Skip keystore.seed
+            if [ "$entry" != "keystore.seed" ]; then
+              # Remove the keystore entry
+              /usr/share/elasticsearch/bin/elasticsearch-keystore remove "$entry"
+              echo "Removed $entry from elasticsearch-keystore"
+            else
+              echo "Skipped $entry"
+            fi
+          done
+
+          echo remaining variables:
+          /usr/share/elasticsearch/bin/elasticsearch-keystore list
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Create secret.txt with password
+      ansible.builtin.copy:
+        content: MyPa55word
+        dest: /opt/colorfulwest/secret.txt
+        mode: '0777'
+
+    - name: Create create.sh script
+      ansible.builtin.copy:
+        dest: /opt/colorfulwest/create.sh
+        content: |
+          #!/bin/bash
+
+          set -x
+          set -u
+          set -e
+
+          variables=(
+            xpack.security.http.ssl.truststore.secure_password
+            xpack.security.http.ssl.keystore.secure_password
+            xpack.security.transport.ssl.keystore.secure_password
+            xpack.security.transport.ssl.truststore.secure_password
+          )
+
+          for variable in "${variables[@]}"; do
+            /usr/share/elasticsearch/bin/elasticsearch-keystore remove "$variable" 2>/dev/null || {
+              exit_code=$?
+              if [ $exit_code -ne 78 ]; then
+                exit $exit_code
+              fi
+            }
+
+            /usr/share/elasticsearch/bin/elasticsearch-keystore add --stdin "$variable" </opt/colorfulwest/secret.txt
+            echo "Added $variable to elasticsearch-keystore"
+          done
+
+          echo current set of variables:
+          /usr/share/elasticsearch/bin/elasticsearch-keystore list
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Run /opt/colorfulwest/clean.sh
+      become: yes
+      ansible.builtin.command: bash -xe /opt/colorfulwest/clean.sh
+
+    - name: Run /opt/colorfulwest/create.sh
+      become: yes
+      ansible.builtin.command: bash -xe /opt/colorfulwest/create.sh
+
+    # end flailing
+
+    - name: Update Elasticsearch configuration
+      ansible.builtin.copy:
+        dest: '{{ elasticsearch_config_path }}'
+        content: |
+          cluster.name: "{{ cluster_name }}"
+          node.name: "{{ inventory_hostname }}"
+          path.data: /var/lib/elasticsearch
+          path.logs: /var/log/elasticsearch
+          xpack.security.enabled: true
+          xpack.security.enrollment.enabled: true
+          xpack.security.http.ssl:
+            enabled: true
+            keystore.path: /etc/elasticsearch/elastic-certificates.p12
+          xpack.security.transport.ssl.enabled: true
+          xpack.security.transport.ssl.verification_mode: certificate
+          xpack.security.transport.ssl.client_authentication: required
+          xpack.security.transport.ssl.keystore.path: /etc/elasticsearch/elastic-certificates.p12
+          xpack.security.transport.ssl.truststore.path: /etc/elasticsearch/elastic-certificates.p12
+          cluster.initial_master_nodes: "{{ master_nodes }}"
+          http.host: 0.0.0.0
+
+      notify:
+        - Restart Elasticsearch
