@@ -1,0 +1,29 @@
+- name: Install Python3 and pip
+  apt:
+    name:
+      - python3-venv
+    state: present
+
+- name: Create a virtual environment
+  command: python3 -m venv nearwash_env
+
+- name: Install nearwash in the virtual environment
+  pip:
+    name: git+https://github.com/gkwa/nearwash.git
+    virtualenv: nearwash_env
+
+- name: Run nearwash report
+  command: "{{ item }}"
+  with_items:
+    - ./nearwash_env/bin/nearwash report
+
+  register: nearwash_report
+
+- name: Search for IP using nearwash
+  command: ./nearwash_env/bin/nearwash search
+  register: ip_search
+
+
+- name: Display the IP
+  debug:
+    var: ip_search.stdout
