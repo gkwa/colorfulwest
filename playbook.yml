@@ -15,14 +15,6 @@
     cluster_name: my_cluster
 
   tasks:
-
-    - name: Include nearwash tasks
-      import_tasks: tasks/nearwash.yml
-
-    - name: Main task 2
-      debug:
-        msg: "Back to the main playbook"
-
     - name: Set log_path variable
       ansible.builtin.set_fact:
         log_path: '/var/log/elasticsearch/{{ cluster_name }}.log'
@@ -192,25 +184,11 @@
 
     - name: Run /opt/colorfulwest/clean.sh
       become: yes
-      ansible.builtin.command: /opt/colorfulwest/clean.sh
+      ansible.builtin.command: bash -xe /opt/colorfulwest/clean.sh
 
     - name: Run /opt/colorfulwest/create.sh
       become: yes
-      ansible.builtin.command: /opt/colorfulwest/create.sh
-      register: create_output
-      failed_when: create_output.rc != 0
-
-# https://www.elastic.co/guide/en/fleet/current/secure-connections.html#secure-connections
-
-    - name: Extract cert.crt from elastic-stack-ca.p12
-      ansible.builtin.command: openssl pkcs12 -in /etc/elasticsearch/elastic-stack-ca.p12 -out /etc/elasticsearch/cert.crt -clcerts -nokeys -passin pass:MyPa55word
-      args:
-        creates: /etc/elasticsearch/cert.crt
-
-    - name: Extract private.key from elastic-stack-ca.p12
-      ansible.builtin.command: openssl pkcs12 -in /etc/elasticsearch/elastic-stack-ca.p12 -out /etc/elasticsearch/private.key -nocerts -nodes -passin pass:MyPa55word
-      args:
-        creates: /etc/elasticsearch/private.key
+      ansible.builtin.command: bash -xe /opt/colorfulwest/create.sh
 
     # end flailing
 
@@ -218,20 +196,21 @@
       ansible.builtin.copy:
         dest: '{{ elasticsearch_config_path }}'
         content: |
-          cluster.name: {{ cluster_name }}
-          node.name: {{ inventory_hostname }}
+          cluster.name: "{{ cluster_name }}"
+          node.name: "{{ inventory_hostname }}"
           path.data: /var/lib/elasticsearch
           path.logs: /var/log/elasticsearch
           xpack.security.enabled: true
           xpack.security.enrollment.enabled: true
-          xpack.security.http.ssl.enabled: true
-          xpack.security.http.ssl.keystore.path: /etc/elasticsearch/elastic-certificates.p12
+          xpack.security.http.ssl:
+            enabled: true
+            keystore.path: /etc/elasticsearch/elastic-certificates.p12
           xpack.security.transport.ssl.enabled: true
           xpack.security.transport.ssl.verification_mode: certificate
           xpack.security.transport.ssl.client_authentication: required
           xpack.security.transport.ssl.keystore.path: /etc/elasticsearch/elastic-certificates.p12
           xpack.security.transport.ssl.truststore.path: /etc/elasticsearch/elastic-certificates.p12
-          cluster.initial_master_nodes: {{ master_nodes }}
+          cluster.initial_master_nodes: "{{ master_nodes }}"
           http.host: 0.0.0.0
 
       notify:
