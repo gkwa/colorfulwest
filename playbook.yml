@@ -54,7 +54,9 @@
         state: absent
 
     - name: Generate new /etc/elasticsearch/elastic-stack-ca.p12 file
-      ansible.builtin.command: /usr/share/elasticsearch/bin/elasticsearch-certutil ca --out /etc/elasticsearch/elastic-stack-ca.p12 --pass MyPa55word
+      ansible.builtin.command: >
+        /usr/share/elasticsearch/bin/elasticsearch-certutil ca
+        --out /etc/elasticsearch/elastic-stack-ca.p12 --pass MyPa55word
       args:
         creates: /etc/elasticsearch/elastic-stack-ca.p12
 
@@ -71,7 +73,12 @@
       register: ca_file_stat
 
     - name: Generate new /etc/elasticsearch/elastic-certificates.p12 file
-      ansible.builtin.command: /usr/share/elasticsearch/bin/elasticsearch-certutil cert --ca-pass MyPa55word --out /etc/elasticsearch/elastic-certificates.p12 --ca /etc/elasticsearch/elastic-stack-ca.p12 --pass MyPa55word
+      ansible.builtin.command: >
+        /usr/share/elasticsearch/bin/elasticsearch-certutil cert
+        --ca-pass MyPa55word
+        --pass MyPa55word
+        --out /etc/elasticsearch/elastic-certificates.p12
+        --ca /etc/elasticsearch/elastic-stack-ca.p12
       args:
         creates: /etc/elasticsearch/elastic-certificates.p12
 
