@@ -56,7 +56,8 @@
     - name: Generate new /etc/elasticsearch/elastic-stack-ca.p12 file
       ansible.builtin.command: >
         /usr/share/elasticsearch/bin/elasticsearch-certutil ca
-        --out /etc/elasticsearch/elastic-stack-ca.p12 --pass MyPa55word
+        --out /etc/elasticsearch/elastic-stack-ca.p12
+        --pass MyPa55word
       args:
         creates: /etc/elasticsearch/elastic-stack-ca.p12
 
@@ -72,15 +73,64 @@
         path: /etc/elasticsearch/elastic-stack-ca.p12
       register: ca_file_stat
 
-    - name: Generate new /etc/elasticsearch/elastic-certificates.p12 file
-      ansible.builtin.command: >
-        /usr/share/elasticsearch/bin/elasticsearch-certutil cert
-        --ca-pass MyPa55word
-        --pass MyPa55word
-        --out /etc/elasticsearch/elastic-certificates.p12
-        --ca /etc/elasticsearch/elastic-stack-ca.p12
+    - name: Create script file
+      ansible.builtin.copy:
+        dest: /tmp/install_nearwash.sh
+        content: |
+          #!/bin/bash
+
+          if ! command -v nearwash >/dev/null; then
+            pip install git+https://github.com/gkwa/nearwash.git
+          fi
+        mode: '0755'
+
+    - name: Run the script
+      ansible.builtin.command: /tmp/install_nearwash.sh
+      register: script_result
+
+    - name: Report exit code
+      ansible.builtin.debug:
+        msg: 'Script exited with code: {{ script_result.rc }}'
+
+    - name: Get IP using nearwash search
+      ansible.builtin.command: nearwash search
+      register: nearwash_output
+
+    - name: Set fact for IP
+      ansible.builtin.set_fact:
+        ip: '{{ nearwash_output.stdout }}'
+
+    - name: Get hostname
+      ansible.builtin.command: hostname
+      register: hostname_output
+
+    - name: Set fact for hostname
+      ansible.builtin.set_fact:
+        hostname: '{{ hostname_output.stdout }}'
+
+    - name: Create elasticsearch-certutil script
+      ansible.builtin.copy:
+        dest: /tmp/elasticsearch_certutil.sh
+        content: |
+          #!/bin/bash
+          /usr/share/elasticsearch/bin/elasticsearch-certutil cert \
+          --ca-pass MyPa55word \
+          --pass MyPa55word \
+          --out /etc/elasticsearch/elastic-certificates.p12 \
+          --ca /etc/elasticsearch/elastic-stack-ca.p12 \
+          --dns "{{ hostname }}" \
+          --ip "{{ ip }}"
+        mode: '0755'
+
+    - name: Run elasticsearch-certutil script
+      ansible.builtin.command: /tmp/elasticsearch_certutil.sh
       args:
         creates: /etc/elasticsearch/elastic-certificates.p12
+      register: certutil_result
+
+    - name: Report exit code
+      ansible.builtin.debug:
+        msg: 'elasticsearch-certutil exited with code: {{ certutil_result.rc }}'
 
     - name: Set permissions on /etc/elasticsearch/elastic-certificates.p12 file
       ansible.builtin.file:
@@ -197,8 +247,6 @@
       become: yes
       ansible.builtin.command: bash -xe /opt/colorfulwest/create.sh
 
-    # end flailing
-
     - name: Update Elasticsearch configuration
       ansible.builtin.copy:
         dest: '{{ elasticsearch_config_path }}'
@@ -222,3 +270,17 @@
 
       notify:
         - Restart Elasticsearch
+
+    - name: Restart Elasticsearch service
+      ansible.builtin.service:
+        name: elasticsearch
+        state: restarted
+
+    - name: Run elasticsearch-setup-passwords command
+      ansible.builtin.command: /usr/share/elasticsearch/bin/elasticsearch-setup-passwords auto --batch
+      register: setup_passwords_output
+
+    - name: Store elasticsearch-setup-passwords output in secrets.txt
+      ansible.builtin.copy:
+        content: '{{ setup_passwords_output.stdout }}'
+        dest: /tmp/secrets.txt
