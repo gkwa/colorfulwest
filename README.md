@@ -1,3 +1,3 @@
 # colorfulwest
 
-Notes from A noobie setting up elasticsearch.
+Reminders to self for how to setup elasticsearch.
