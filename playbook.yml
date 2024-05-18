@@ -247,12 +247,16 @@
       become: yes
       ansible.builtin.command: bash -xe /opt/colorfulwest/create.sh
 
+    - name: Get hostname
+      ansible.builtin.command: hostname
+      register: hostname_output
+
     - name: Update Elasticsearch configuration
       ansible.builtin.copy:
         dest: '{{ elasticsearch_config_path }}'
         content: |
           cluster.name: "{{ cluster_name }}"
-          node.name: "{{ inventory_hostname }}"
+          node.name: "{{ hostname_output.stdout }}"
           path.data: /var/lib/elasticsearch
           path.logs: /var/log/elasticsearch
           xpack.security.enabled: true
@@ -265,9 +269,8 @@
           xpack.security.transport.ssl.client_authentication: required
           xpack.security.transport.ssl.keystore.path: /etc/elasticsearch/elastic-certificates.p12
           xpack.security.transport.ssl.truststore.path: /etc/elasticsearch/elastic-certificates.p12
-          cluster.initial_master_nodes: "{{ master_nodes }}"
+          cluster.initial_master_nodes: ["{{ master_nodes[0] }}"]
           http.host: 0.0.0.0
-
       notify:
         - Restart Elasticsearch
 
