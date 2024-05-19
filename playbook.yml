@@ -15,9 +15,18 @@
     cluster_name: my_cluster
 
   tasks:
-    - name: Append commands to /root/.bash_history
+
+    - name: 'touch /{{ ansible_user }}/.bash_history file'
+      ansible.builtin.file:
+        path: '/{{ ansible_user }}/.bash_history'
+        state: touch
+        owner: '{{ ansible_user }}'
+        group: '{{ ansible_user }}'
+        mode: '0600'
+
+    - name: Append commands to '/{{ ansible_user }}/.bash_history'
       ansible.builtin.blockinfile:
-        path: /root/.bash_history
+        path: '/{{ ansible_user }}/.bash_history'
         block: |
           /usr/share/elasticsearch/bin/elasticsearch-certutil ca --out /etc/elasticsearch/elastic-stack-ca.p12 --pass MyPa55word
           /usr/share/elasticsearch/bin/elasticsearch-reset-password --username elastic --auto --batch
@@ -172,7 +181,6 @@
         content: |
           #!/bin/bash
 
-          set -x
           set -u
           set -e
 
