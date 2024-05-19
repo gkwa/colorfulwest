@@ -15,7 +15,6 @@
     cluster_name: my_cluster
 
   tasks:
-
     - name: Append commands to /root/.bash_history
       ansible.builtin.blockinfile:
         path: /root/.bash_history
@@ -29,12 +28,15 @@
           cat /var/log/elasticsearch/elasticsearch.log
           cat /var/log/elasticsearch/my_cluster.log
           cue export --out=yaml /etc/elasticsearch/elasticsearch.yml
+          curl --insecure --cacert /etc/elasticsearch/certs/http_ca.crt -u elastic:$ELASTIC_PASSWORD https://localhost:9200
           curl --cacert /etc/elasticsearch/certs/http_ca.crt -u my_admin:my_password https://localhost:9200
+          /opt/colorfulwest/curl_test.sh
           curl --insecure --cacert /etc/elasticsearch/certs/http_ca.crt -u my_admin:my_password https://localhost:9200
           find /etc/elasticsearch -type f
           find /opt/colorfulwest -type f
           grep cluster.name /etc/elasticsearch/elasticsearch.yml
           history | perl -p -e 's#^ *\d+\s+##'
+          journalctl -xe
           journalctl -xeu elasticsearch.service
           less -RSi /var/log/elasticsearch/elasticsearch.log
           less -RSi /var/log/elasticsearch/my_cluster.log
@@ -47,8 +49,8 @@
           time systemctl start elasticsearch.service
           time systemctl stop elasticsearch.service
           vim /etc/elasticsearch/elasticsearch.yml
-          yq -i 'del(."cluster.initial_master_nodes")' /etc/elasticsearch/elasticsearch.yml; yq -i '.cluster.initial_master_nodes = ["'`hostname`'"]' /etc/elasticsearch/elasticsearch.yml
-          export ELASTIC_PASSWORD=$(perl -ne 'print "$1\n" if m{New value: (.+)}' /opt/colorfulwest/secrets.txt)
+          yq -i 'del(."cluster.initial_master_nodes")' /etc/elasticsearch/elasticsearch.yml && yq -i '.cluster.initial_master_nodes = ["'`hostname`'"]' /etc/elasticsearch/elasticsearch.yml && cue export --out=yaml /etc/elasticsearch/elasticsearch.yml
+          export ELASTIC_PASSWORD=$(perl -ne 'print "$1\n" if m{New value: (.+)}' /opt/colorfulwest/secrets.txt); echo ELASTIC_PASSWORD:$ELASTIC_PASSWORD
 
     - name: Create directory /opt/colorfulwest/
       ansible.builtin.file:
@@ -120,7 +122,7 @@
         path: /etc/elasticsearch/elastic-stack-ca.p12
       register: ca_file_stat
 
-    - name: Create script file
+    - name: Create /opt/colorfulwest/install_nearwash.sh
       ansible.builtin.copy:
         dest: /opt/colorfulwest/install_nearwash.sh
         content: |
@@ -163,6 +165,32 @@
       ansible.builtin.shell: >
         ifconfig | grep -v inet6 | grep inet | awk '{print $2}' | sort -V | tr '\n' ',' | sed 's/,$//'
       register: ips_output
+
+    - name: Create /opt/colorfulwest/curl_test.sh
+      ansible.builtin.copy:
+        dest: /opt/colorfulwest/curl_test.sh
+        content: |
+          #!/bin/bash
+
+          set -x
+          set -u
+          set -e
+
+          export ELASTIC_PASSWORD=$(perl -ne 'print "$1\n" if m{New value: (.+)}' /opt/colorfulwest/secrets.txt)
+          echo ELASTIC_PASSWORD:$ELASTIC_PASSWORD
+
+          openssl pkcs12 -in /etc/elasticsearch/elastic-stack-ca.p12 -out /etc/elasticsearch/cert.crt -clcerts -nokeys -passin pass:MyPa55word
+
+          if [[ ! -f /tmp/nearwash.txt ]]; then
+              nearwash report >/tmp/nearwash.txt
+          fi
+
+          grep -i ipv4 /tmp/nearwash.txt | grep -oE 'IPAddress: [^ ]*' | cut -d: -f2 | tr -d ' ' | sort -u |
+              while read ip; do
+                  curl --connect-timeout 1 --cacert /etc/elasticsearch/cert.crt -u elastic:$ELASTIC_PASSWORD https://$ip:9200
+              done
+
+        mode: '0755'
 
     - name: Create elasticsearch-certutil script
       ansible.builtin.copy:
