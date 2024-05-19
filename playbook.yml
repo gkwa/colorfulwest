@@ -15,6 +15,41 @@
     cluster_name: my_cluster
 
   tasks:
+
+    - name: Append commands to /root/.bash_history
+      ansible.builtin.blockinfile:
+        path: /root/.bash_history
+        block: |
+          /usr/share/elasticsearch/bin/elasticsearch-certutil ca --out /etc/elasticsearch/elastic-stack-ca.p12 --pass MyPa55word
+          /usr/share/elasticsearch/bin/elasticsearch-reset-password --username elastic --auto --batch
+          /usr/share/elasticsearch/bin/elasticsearch-users useradd my_admin -p my_password -r superuser
+          cat /etc/elasticsearch/elasticsearch.yml
+          cat /opt/colorfulwest/elasticsearch_certutil.sh
+          cat /opt/colorfulwest/secrets.txt
+          cat /var/log/elasticsearch/elasticsearch.log
+          cat /var/log/elasticsearch/my_cluster.log
+          cue export --out=yaml /etc/elasticsearch/elasticsearch.yml
+          curl --cacert /etc/elasticsearch/certs/http_ca.crt -u my_admin:my_password https://localhost:9200
+          curl --insecure --cacert /etc/elasticsearch/certs/http_ca.crt -u my_admin:my_password https://localhost:9200
+          find /etc/elasticsearch -type f
+          find /opt/colorfulwest -type f
+          grep cluster.name /etc/elasticsearch/elasticsearch.yml
+          history | perl -p -e 's#^ *\d+\s+##'
+          journalctl -xeu elasticsearch.service
+          less -RSi /var/log/elasticsearch/elasticsearch.log
+          less -RSi /var/log/elasticsearch/my_cluster.log
+          PAGER=cat systemctl status elasticsearch.service
+          systemctl daemon-reload
+          systemctl enable elasticsearch.service
+          tail --retry --follow /var/log/elasticsearch/elasticsearch.log
+          tail --retry --follow /var/log/elasticsearch/my_cluster.log
+          time systemctl restart elasticsearch.service
+          time systemctl start elasticsearch.service
+          time systemctl stop elasticsearch.service
+          vim /etc/elasticsearch/elasticsearch.yml
+          yq -i 'del(."cluster.initial_master_nodes")' /etc/elasticsearch/elasticsearch.yml; yq -i '.cluster.initial_master_nodes = ["'`hostname`'"]' /etc/elasticsearch/elasticsearch.yml
+          export ELASTIC_PASSWORD=$(perl -ne 'print "$1\n" if m{New value: (.+)}' /opt/colorfulwest/secrets.txt)
+
     - name: Create directory /opt/colorfulwest/
       ansible.builtin.file:
         path: /opt/colorfulwest/
@@ -221,8 +256,6 @@
         content: MyPa55word
         dest: /opt/colorfulwest/secret.txt
         mode: '0777'
-      args:
-        creates: /opt/colorfulwest/secret.txt
 
     - name: Create /opt/colorfulwest/keystore_set.sh script
       ansible.builtin.copy:
@@ -281,9 +314,8 @@
           path.logs: /var/log/elasticsearch
           xpack.security.enabled: true
           xpack.security.enrollment.enabled: true
-          xpack.security.http.ssl:
-            enabled: true
-            keystore.path: /etc/elasticsearch/elastic-certificates.p12
+          xpack.security.http.ssl.enabled: true
+          xpack.security.http.ssl.keystore.path: /etc/elasticsearch/elastic-certificates.p12
           xpack.security.transport.ssl.enabled: true
           xpack.security.transport.ssl.verification_mode: certificate
           xpack.security.transport.ssl.client_authentication: required
@@ -298,7 +330,7 @@
         state: restarted
 
     - name: Run elasticsearch-setup-passwords command
-      ansible.builtin.command: /usr/share/elasticsearch/bin/elasticsearch-setup-passwords auto --batch
+      ansible.builtin.command: /usr/share/elasticsearch/bin/elasticsearch-reset-password --username elastic --auto --batch
       register: setup_passwords_output
 
     - name: Store elasticsearch-setup-passwords output in /opt/colorfulwest/secrets.txt
