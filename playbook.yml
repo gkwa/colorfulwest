@@ -61,7 +61,22 @@
           vim /etc/elasticsearch/elasticsearch.yml
           yq -i 'del(."cluster.initial_master_nodes")' /etc/elasticsearch/elasticsearch.yml && yq -i '.cluster.initial_master_nodes = ["'`hostname`'"]' /etc/elasticsearch/elasticsearch.yml && cue export --out=yaml /etc/elasticsearch/elasticsearch.yml
           export ELASTIC_PASSWORD=$(perl -ne 'print "$1\n" if m{New value: (.+)}' /opt/colorfulwest/secrets.txt); echo ELASTIC_PASSWORD:$ELASTIC_PASSWORD
-      #loop: "{{ range(1, 3)|list }}"
+          cat /opt/colorfulwest/secret.txt
+          cat /opt/colorfulwest/install_nearwash.sh
+          cat /opt/colorfulwest/elasticsearch_certutil.sh
+          cat /opt/colorfulwest/keystore_set.sh
+          cat /opt/colorfulwest/secrets.txt
+          cat /opt/colorfulwest/keystore_clean.sh
+          cat /opt/colorfulwest/curl_test.sh
+          nvim /opt/colorfulwest/secret.txt
+          nvim /opt/colorfulwest/install_nearwash.sh
+          nvim /opt/colorfulwest/elasticsearch_certutil.sh
+          nvim /opt/colorfulwest/keystore_set.sh
+          nvim /opt/colorfulwest/secrets.txt
+          nvim /opt/colorfulwest/keystore_clean.sh
+          nvim /opt/colorfulwest/curl_test.sh
+
+      loop: "{{ range(1, 3)|list }}"
 
     - name: Create directory /opt/colorfulwest/
       ansible.builtin.file:
@@ -104,7 +119,7 @@
         path: /etc/elasticsearch/elastic-stack-ca.p12
         state: absent
 
-    - name: Remove existing elastic-certificates.p12 file
+    - name: Remove existing /etc/elasticsearch/elastic-certificates.p12 file
       ansible.builtin.file:
         path: /etc/elasticsearch/elastic-certificates.p12
         state: absent
@@ -124,7 +139,7 @@
         owner: elasticsearch
         group: elasticsearch
 
-    - name: Assert the existence of elastic-stack-ca.p12 file
+    - name: Assert the existence of /etc/elasticsearch/elastic-stack-ca.p12 file
       ansible.builtin.stat:
         path: /etc/elasticsearch/elastic-stack-ca.p12
       register: ca_file_stat
@@ -144,7 +159,7 @@
           fi
         mode: '0755'
 
-    - name: Run the script
+    - name: Run script /opt/colorfulwest/install_nearwash.sh
       ansible.builtin.command: /opt/colorfulwest/install_nearwash.sh
       register: script_result
 
