@@ -34,6 +34,7 @@
           cat /etc/elasticsearch/elasticsearch.yml
           cat /opt/colorfulwest/elasticsearch_certutil.sh
           cat /opt/colorfulwest/secrets.txt
+          nvim /opt/colorfulwest/curl_test.sh
           cat /var/log/elasticsearch/elasticsearch.log
           cat /var/log/elasticsearch/my_cluster.log
           cue export --out=yaml /etc/elasticsearch/elasticsearch.yml
@@ -60,6 +61,7 @@
           vim /etc/elasticsearch/elasticsearch.yml
           yq -i 'del(."cluster.initial_master_nodes")' /etc/elasticsearch/elasticsearch.yml && yq -i '.cluster.initial_master_nodes = ["'`hostname`'"]' /etc/elasticsearch/elasticsearch.yml && cue export --out=yaml /etc/elasticsearch/elasticsearch.yml
           export ELASTIC_PASSWORD=$(perl -ne 'print "$1\n" if m{New value: (.+)}' /opt/colorfulwest/secrets.txt); echo ELASTIC_PASSWORD:$ELASTIC_PASSWORD
+      #loop: "{{ range(1, 3)|list }}"
 
     - name: Create directory /opt/colorfulwest/
       ansible.builtin.file:
@@ -81,13 +83,9 @@
       ansible.builtin.debug:
         msg: 'Log path is {{ log_path }}'
 
-    - name: Get hostname
-      ansible.builtin.command: hostname
-      register: hostname_output
-
     - name: Add hostname to master_nodes
       ansible.builtin.set_fact:
-        master_nodes: '{{ master_nodes + [hostname_output.stdout] }}'
+        master_nodes: '{{ master_nodes + [ ansible_hostname ] }}'
 
     - name: Check if Elasticsearch configuration backup exists
       ansible.builtin.stat:
@@ -162,14 +160,6 @@
       ansible.builtin.set_fact:
         ip: '{{ nearwash_output.stdout }}'
 
-    - name: Get hostname
-      ansible.builtin.command: hostname
-      register: hostname_output
-
-    - name: Set fact for hostname
-      ansible.builtin.set_fact:
-        hostname: '{{ hostname_output.stdout }}'
-
     - name: Get IPs into comma seperated list
       ansible.builtin.shell: >
         ifconfig | grep -v inet6 | grep inet | awk '{print $2}' | sort -V | tr '\n' ',' | sed 's/,$//'
@@ -181,10 +171,7 @@
         content: |
           #!/bin/bash
 
-          set -u
-          set -e
-
-          export ELASTIC_PASSWORD=$(perl -ne 'print "$1\n" if m{New value: (.+)}' /opt/colorfulwest/secrets.txt)
+          export ELASTIC_PASSWORD=$(grep 'New value: ' /opt/colorfulwest/secrets.txt | cut -d: -f2 | tr -d ' ' | head -1)
           echo ELASTIC_PASSWORD:$ELASTIC_PASSWORD
 
           openssl pkcs12 -in /etc/elasticsearch/elastic-stack-ca.p12 -out /etc/elasticsearch/cert.crt -clcerts -nokeys -passin pass:MyPa55word
@@ -215,7 +202,7 @@
           --pass MyPa55word \
           --out /etc/elasticsearch/elastic-certificates.p12 \
           --ca /etc/elasticsearch/elastic-stack-ca.p12 \
-          --dns "{{ hostname }},{{ ips_output.stdout }}" \
+          --dns "{{ ansible_hostname }},{{ ips_output.stdout }}" \
           --ip "{{ ips_output.stdout }}"
         mode: '0755'
 
@@ -336,16 +323,12 @@
       become: yes
       ansible.builtin.command: /opt/colorfulwest/keystore_set.sh
 
-    - name: Get hostname
-      ansible.builtin.command: hostname
-      register: hostname_output
-
     - name: Update Elasticsearch configuration
       ansible.builtin.copy:
         dest: '{{ elasticsearch_config_path }}'
         content: |
           cluster.name: {{ cluster_name }}
-          node.name: {{ hostname_output.stdout }}
+          node.name: {{ ansible_hostname }}
           path.data: /var/lib/elasticsearch
           path.logs: /var/log/elasticsearch
           xpack.security.enabled: true
