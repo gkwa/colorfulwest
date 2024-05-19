@@ -148,7 +148,7 @@
           --ip "{{ ips_output.stdout }}"
         mode: '0755'
 
-    - name: Run elasticsearch-certutil script
+    - name: Run /opt/colorfulwest/elasticsearch_certutil.sh script
       ansible.builtin.command: /opt/colorfulwest/elasticsearch_certutil.sh
       args:
         creates: /etc/elasticsearch/elastic-certificates.p12
@@ -185,7 +185,7 @@
         name: elasticsearch
         enabled: yes
 
-    - name: Create clean.sh script
+    - name: Create /opt/colorfulwest/keystore_clean.sh script
       ansible.builtin.copy:
         dest: /opt/colorfulwest/keystore_clean.sh
         content: |
@@ -273,8 +273,8 @@
       ansible.builtin.copy:
         dest: '{{ elasticsearch_config_path }}'
         content: |
-          cluster.name: "{{ cluster_name }}"
-          node.name: "{{ hostname_output.stdout }}"
+          cluster.name: {{ cluster_name }}
+          node.name: {{ hostname_output.stdout }}
           path.data: /var/lib/elasticsearch
           path.logs: /var/log/elasticsearch
           xpack.security.enabled: true
@@ -289,8 +289,6 @@
           xpack.security.transport.ssl.truststore.path: /etc/elasticsearch/elastic-certificates.p12
           cluster.initial_master_nodes: ["{{ master_nodes[0] }}"]
           http.host: 0.0.0.0
-      notify:
-        - Restart Elasticsearch
 
     - name: Restart Elasticsearch service
       ansible.builtin.service:
