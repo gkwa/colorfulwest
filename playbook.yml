@@ -221,6 +221,8 @@
         content: MyPa55word
         dest: /opt/colorfulwest/secret.txt
         mode: '0777'
+      args:
+        creates: /opt/colorfulwest/secret.txt
 
     - name: Create /opt/colorfulwest/keystore_set.sh script
       ansible.builtin.copy:
