@@ -15,7 +15,6 @@
     cluster_name: my_cluster
 
   tasks:
-
     - name: 'touch /{{ ansible_user }}/.bash_history file'
       ansible.builtin.file:
         path: '/{{ ansible_user }}/.bash_history'
@@ -76,7 +75,7 @@
           nvim /opt/colorfulwest/keystore_clean.sh
           nvim /opt/colorfulwest/curl_test.sh
 
-      loop: "{{ range(1, 3)|list }}"
+      loop: '{{ range(1, 3)|list }}'
 
     - name: Create directory /opt/colorfulwest/
       ansible.builtin.file:
@@ -147,6 +146,7 @@
     - name: Create /opt/colorfulwest/install_nearwash.sh
       ansible.builtin.copy:
         dest: /opt/colorfulwest/install_nearwash.sh
+        mode: '0755'
         content: |
           #!/bin/bash
 
@@ -157,7 +157,6 @@
           if ! command -v nearwash >/dev/null; then
             pip install git+https://github.com/gkwa/nearwash.git
           fi
-        mode: '0755'
 
     - name: Run script /opt/colorfulwest/install_nearwash.sh
       ansible.builtin.command: /opt/colorfulwest/install_nearwash.sh
@@ -183,6 +182,7 @@
     - name: Create /opt/colorfulwest/curl_test.sh
       ansible.builtin.copy:
         dest: /opt/colorfulwest/curl_test.sh
+        mode: '0755'
         content: |
           #!/bin/bash
 
@@ -200,11 +200,10 @@
                   curl --connect-timeout 1 --cacert /etc/elasticsearch/cert.crt -u elastic:$ELASTIC_PASSWORD https://$ip:9200
               done
 
-        mode: '0755'
-
-    - name: Create elasticsearch-certutil script
+    - name: Create script /opt/colorfulwest/elasticsearch_certutil.sh
       ansible.builtin.copy:
         dest: /opt/colorfulwest/elasticsearch_certutil.sh
+        mode: '0755'
         content: |
           #!/bin/bash
 
@@ -219,7 +218,6 @@
           --ca /etc/elasticsearch/elastic-stack-ca.p12 \
           --dns "{{ ansible_hostname }},{{ ips_output.stdout }}" \
           --ip "{{ ips_output.stdout }}"
-        mode: '0755'
 
     - name: Run /opt/colorfulwest/elasticsearch_certutil.sh script
       ansible.builtin.command: /opt/colorfulwest/elasticsearch_certutil.sh
@@ -238,12 +236,33 @@
         owner: elasticsearch
         group: elasticsearch
 
+    - name: Create script /opt/colorfulwest/cert_subject_check.sh
+      ansible.builtin.copy:
+        dest: /opt/colorfulwest/cert_subject_check.sh
+        mode: '0755'
+        content: |
+          #!/bin/bash
+
+          set -x
+          set -u
+          set -e
+
+          openssl x509 -noout -ext subjectAltName -in /etc/elasticsearch/elastic-certificates.p12 -passin pass:MyPa55word
+
+    - name: Run /opt/colorfulwest/cert_subject_check.sh script
+      ansible.builtin.command: /opt/colorfulwest/cert_subject_check.sh
+      register: cert_subject_check
+
+    - name: Report subjectAltName
+      ansible.builtin.debug:
+        msg: '{{ cert_subject_check }}'
+
     - name: Fail if /etc/elasticsearch/elastic-stack-ca.p12 file does not exist
       ansible.builtin.fail:
         msg: 'The elastic-stack-ca.p12 file does not exist.'
       when: not ca_file_stat.stat.exists
 
-    - name: Assert the existence of elastic-stack-ca.p12 file
+    - name: Assert the existence of /etc/elasticsearch/elastic-stack-ca.p12 file
       ansible.builtin.stat:
         path: /etc/elasticsearch/elastic-certificates.p12
       register: cert_file_stat
