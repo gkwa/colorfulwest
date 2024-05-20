@@ -36,20 +36,27 @@
       ansible.builtin.blockinfile:
         path: '/{{ ansible_user }}/.bash_history'
         block: |
+          /opt/colorfulwest/curl_test.sh
           /usr/share/elasticsearch/bin/elasticsearch-certutil ca --out /etc/elasticsearch/elastic-stack-ca.p12 --pass MyPa55word
           /usr/share/elasticsearch/bin/elasticsearch-reset-password --username elastic --auto --batch
           /usr/share/elasticsearch/bin/elasticsearch-users useradd my_admin -p my_password -r superuser
           cat /etc/elasticsearch/elasticsearch.yml
+          cat /opt/colorfulwest/cert_subject_check.sh
+          cat /opt/colorfulwest/curl_test.sh
           cat /opt/colorfulwest/elasticsearch_certutil.sh
+          cat /opt/colorfulwest/elasticsearch_certutil.sh
+          cat /opt/colorfulwest/keystore_clean.sh
+          cat /opt/colorfulwest/keystore_set.sh
+          cat /opt/colorfulwest/secret.txt
           cat /opt/colorfulwest/secrets.txt
-          nvim /opt/colorfulwest/curl_test.sh
+          cat /opt/colorfulwest/secrets.txt
           cat /var/log/elasticsearch/elasticsearch.log
           cat /var/log/elasticsearch/my_cluster.log
           cue export --out=yaml /etc/elasticsearch/elasticsearch.yml
-          curl --insecure --cacert /etc/elasticsearch/certs/http_ca.crt -u elastic:$ELASTIC_PASSWORD https://localhost:9200
           curl --cacert /etc/elasticsearch/certs/http_ca.crt -u my_admin:my_password https://localhost:9200
-          /opt/colorfulwest/curl_test.sh
+          curl --insecure --cacert /etc/elasticsearch/certs/http_ca.crt -u elastic:$ELASTIC_PASSWORD https://localhost:9200
           curl --insecure --cacert /etc/elasticsearch/certs/http_ca.crt -u my_admin:my_password https://localhost:9200
+          export ELASTIC_PASSWORD=$(perl -ne 'print "$1\n" if m{New value: (.+)}' /opt/colorfulwest/secrets.txt); echo ELASTIC_PASSWORD:$ELASTIC_PASSWORD
           find /etc/elasticsearch -type f
           find /opt/colorfulwest -type f
           grep cluster.name /etc/elasticsearch/elasticsearch.yml
@@ -58,6 +65,14 @@
           journalctl -xeu elasticsearch.service
           less -RSi /var/log/elasticsearch/elasticsearch.log
           less -RSi /var/log/elasticsearch/my_cluster.log
+          nvim /opt/colorfulwest/cert_subject_check.sh
+          nvim /opt/colorfulwest/curl_test.sh
+          nvim /opt/colorfulwest/curl_test.sh
+          nvim /opt/colorfulwest/elasticsearch_certutil.sh
+          nvim /opt/colorfulwest/keystore_clean.sh
+          nvim /opt/colorfulwest/keystore_set.sh
+          nvim /opt/colorfulwest/secret.txt
+          nvim /opt/colorfulwest/secrets.txt
           PAGER=cat systemctl status elasticsearch.service
           systemctl daemon-reload
           systemctl enable elasticsearch.service
@@ -68,21 +83,6 @@
           time systemctl stop elasticsearch.service
           vim /etc/elasticsearch/elasticsearch.yml
           yq -i 'del(."cluster.initial_master_nodes")' /etc/elasticsearch/elasticsearch.yml && yq -i '.cluster.initial_master_nodes = ["'`hostname`'"]' /etc/elasticsearch/elasticsearch.yml && cue export --out=yaml /etc/elasticsearch/elasticsearch.yml
-          export ELASTIC_PASSWORD=$(perl -ne 'print "$1\n" if m{New value: (.+)}' /opt/colorfulwest/secrets.txt); echo ELASTIC_PASSWORD:$ELASTIC_PASSWORD
-          cat /opt/colorfulwest/secret.txt
-          cat /opt/colorfulwest/elasticsearch_certutil.sh
-          cat /opt/colorfulwest/cert_subject_check.sh
-          nvim /opt/colorfulwest/cert_subject_check.sh
-          cat /opt/colorfulwest/keystore_set.sh
-          cat /opt/colorfulwest/secrets.txt
-          cat /opt/colorfulwest/keystore_clean.sh
-          cat /opt/colorfulwest/curl_test.sh
-          nvim /opt/colorfulwest/secret.txt
-          nvim /opt/colorfulwest/elasticsearch_certutil.sh
-          nvim /opt/colorfulwest/keystore_set.sh
-          nvim /opt/colorfulwest/secrets.txt
-          nvim /opt/colorfulwest/keystore_clean.sh
-          nvim /opt/colorfulwest/curl_test.sh
 
     - name: Check if eachdodge is installed
       ansible.builtin.command: command -v eachdodge
@@ -163,18 +163,19 @@
         content: |
           #!/bin/bash
 
+          set -x
+          set -e
+          set -u
+
           export ELASTIC_PASSWORD=$(grep 'New value: ' /opt/colorfulwest/secrets.txt | cut -d: -f2 | tr -d ' ' | head -1)
           echo ELASTIC_PASSWORD:$ELASTIC_PASSWORD
 
           openssl pkcs12 -in /etc/elasticsearch/elastic-stack-ca.p12 -out /etc/elasticsearch/cert.crt -clcerts -nokeys -passin pass:MyPa55word
 
-          jsfile=$(mktemp /tmp/eachdodge-XXXX.json)
-          eachdodge ips2 --outfile=$jsfile
-          jq --raw-output '.[] | select(.ipVersion == "IPv4") | .ip' $jsfile |
+          eachdodge --out=json | jq --raw-output '.[] | select(.ipVersion == "IPv4") | .ip' |
               while read ip; do
                   curl --connect-timeout 1 --cacert /etc/elasticsearch/cert.crt -u elastic:$ELASTIC_PASSWORD https://$ip:9200
               done
-          rm -f $jsfile
 
     - name: Create script /opt/colorfulwest/elasticsearch_certutil.sh
       ansible.builtin.copy:
