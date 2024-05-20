@@ -15,6 +15,15 @@
     cluster_name: my_cluster
 
   tasks:
+    - name: Wait for SSH connection
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        sleep: 5
+        timeout: 300
+      register: wait_result
+      until: wait_result is success
+      retries: 10
+
     - name: 'touch /{{ ansible_user }}/.bash_history file'
       ansible.builtin.file:
         path: '/{{ ansible_user }}/.bash_history'
@@ -63,6 +72,8 @@
           cat /opt/colorfulwest/secret.txt
           cat /opt/colorfulwest/install_nearwash.sh
           cat /opt/colorfulwest/elasticsearch_certutil.sh
+          cat /opt/colorfulwest/cert_subject_check.sh
+          nvim /opt/colorfulwest/cert_subject_check.sh
           cat /opt/colorfulwest/keystore_set.sh
           cat /opt/colorfulwest/secrets.txt
           cat /opt/colorfulwest/keystore_clean.sh
@@ -75,8 +86,6 @@
           nvim /opt/colorfulwest/keystore_clean.sh
           nvim /opt/colorfulwest/curl_test.sh
 
-      loop: '{{ range(1, 3)|list }}'
-
     - name: Create directory /opt/colorfulwest/
       ansible.builtin.file:
         path: /opt/colorfulwest/
@@ -85,9 +94,12 @@
 
     - name: Install net-tools
       ansible.builtin.package:
-        name:
-          - net-tools
+        name: net-tools
         state: present
+      register: result
+      until: result is succeeded
+      retries: 10
+      delay: 20
 
     - name: Set log_path variable
       ansible.builtin.set_fact:
@@ -211,13 +223,27 @@
           set -u
           set -e
 
+          if ! command -v eachdodge &>/dev/null; then
+            curl -sSL https://github.com/gkwa/eachdodge/releases/latest/download/eachdodge_Linux_x86_64.tar.gz | tar -C /usr/local/bin --no-same-owner -xz eachdodge
+            eachdodge version
+          fi
+
+          jsfile=$(mktemp /tmp/eachdodge-XXXX.json)
+          eachdodge ips2 --outfile=$jsfile
+          ips=$(
+            jq --raw-output '.[] | select(.ipVersion == "IPv4") | .ip' $jsfile |
+            jq --raw-input . | jq --raw-output --slurp 'join(",")'
+          )
+          echo $ips # 172.17.0.1,15.156.100.61
+          dns="{{ ansible_hostname }},$ips"
+
           /usr/share/elasticsearch/bin/elasticsearch-certutil cert \
           --ca-pass MyPa55word \
           --pass MyPa55word \
           --out /etc/elasticsearch/elastic-certificates.p12 \
           --ca /etc/elasticsearch/elastic-stack-ca.p12 \
-          --dns "{{ ansible_hostname }},{{ ips_output.stdout }}" \
-          --ip "{{ ips_output.stdout }}"
+          --dns "$dns" \
+          --ip "$ips"
 
     - name: Run /opt/colorfulwest/elasticsearch_certutil.sh script
       ansible.builtin.command: /opt/colorfulwest/elasticsearch_certutil.sh
@@ -236,27 +262,6 @@
         owner: elasticsearch
         group: elasticsearch
 
-    - name: Create script /opt/colorfulwest/cert_subject_check.sh
-      ansible.builtin.copy:
-        dest: /opt/colorfulwest/cert_subject_check.sh
-        mode: '0755'
-        content: |
-          #!/bin/bash
-
-          set -x
-          set -u
-          set -e
-
-          openssl x509 -noout -ext subjectAltName -in /etc/elasticsearch/elastic-certificates.p12 -passin pass:MyPa55word
-
-    - name: Run /opt/colorfulwest/cert_subject_check.sh script
-      ansible.builtin.command: /opt/colorfulwest/cert_subject_check.sh
-      register: cert_subject_check
-
-    - name: Report subjectAltName
-      ansible.builtin.debug:
-        msg: '{{ cert_subject_check }}'
-
     - name: Fail if /etc/elasticsearch/elastic-stack-ca.p12 file does not exist
       ansible.builtin.fail:
         msg: 'The elastic-stack-ca.p12 file does not exist.'
@@ -271,6 +276,34 @@
       ansible.builtin.fail:
         msg: 'The /etc/elasticsearch/elastic-certificates.p12 file does not exist.'
       when: not cert_file_stat.stat.exists
+
+    - name: Create script /opt/colorfulwest/cert_subject_check.sh
+      ansible.builtin.copy:
+        dest: /opt/colorfulwest/cert_subject_check.sh
+        mode: '0755'
+        content: |
+          #!/usr/bin/env bash
+
+          # Check subjectAltName
+
+          # Convert PKCS12 to PEM format
+          openssl pkcs12 -in /etc/elasticsearch/elastic-certificates.p12 -out /tmp/elastic-certificates.pem -nokeys -nodes -passin pass:MyPa55word
+
+          if openssl x509 -noout -ext subjectAltName -in /tmp/elastic-certificates.pem; then
+              rm -f /tmp/elastic-certificates.pem  # Clean up the temporary PEM file
+          fi
+
+    - name: Run /opt/colorfulwest/cert_subject_check.sh script
+      ansible.builtin.shell: /opt/colorfulwest/cert_subject_check.sh
+      register: cert_subject_check
+
+    - name: Report exit code
+      ansible.builtin.debug:
+        msg: 'Script exited with code: {{ cert_subject_check.rc }}'
+
+    - name: Report subjectAltName
+      ansible.builtin.debug:
+        msg: '{{ cert_subject_check }}'
 
     - name: Enable Elasticsearch service
       ansible.builtin.service:
