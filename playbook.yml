@@ -70,7 +70,6 @@
           yq -i 'del(."cluster.initial_master_nodes")' /etc/elasticsearch/elasticsearch.yml && yq -i '.cluster.initial_master_nodes = ["'`hostname`'"]' /etc/elasticsearch/elasticsearch.yml && cue export --out=yaml /etc/elasticsearch/elasticsearch.yml
           export ELASTIC_PASSWORD=$(perl -ne 'print "$1\n" if m{New value: (.+)}' /opt/colorfulwest/secrets.txt); echo ELASTIC_PASSWORD:$ELASTIC_PASSWORD
           cat /opt/colorfulwest/secret.txt
-          cat /opt/colorfulwest/install_nearwash.sh
           cat /opt/colorfulwest/elasticsearch_certutil.sh
           cat /opt/colorfulwest/cert_subject_check.sh
           nvim /opt/colorfulwest/cert_subject_check.sh
@@ -79,27 +78,29 @@
           cat /opt/colorfulwest/keystore_clean.sh
           cat /opt/colorfulwest/curl_test.sh
           nvim /opt/colorfulwest/secret.txt
-          nvim /opt/colorfulwest/install_nearwash.sh
           nvim /opt/colorfulwest/elasticsearch_certutil.sh
           nvim /opt/colorfulwest/keystore_set.sh
           nvim /opt/colorfulwest/secrets.txt
           nvim /opt/colorfulwest/keystore_clean.sh
           nvim /opt/colorfulwest/curl_test.sh
 
+    - name: Check if eachdodge is installed
+      ansible.builtin.command: command -v eachdodge
+      register: eachdodge_installed
+      ignore_errors: true
+
+    - name: Install eachdodge
+      ansible.builtin.shell: |
+        url=https://github.com/gkwa/eachdodge/releases/latest/download/eachdodge_Linux_x86_64.tar.gz
+        curl -sSL $url | tar -C /usr/local/bin --no-same-owner -xz eachdodge
+        eachdodge version
+      when: eachdodge_installed.rc != 0
+
     - name: Create directory /opt/colorfulwest/
       ansible.builtin.file:
         path: /opt/colorfulwest/
         state: directory
         mode: '0700'
-
-    - name: Install net-tools
-      ansible.builtin.package:
-        name: net-tools
-        state: present
-      register: result
-      until: result is succeeded
-      retries: 10
-      delay: 20
 
     - name: Set log_path variable
       ansible.builtin.set_fact:
@@ -155,42 +156,6 @@
         path: /etc/elasticsearch/elastic-stack-ca.p12
       register: ca_file_stat
 
-    - name: Create /opt/colorfulwest/install_nearwash.sh
-      ansible.builtin.copy:
-        dest: /opt/colorfulwest/install_nearwash.sh
-        mode: '0755'
-        content: |
-          #!/bin/bash
-
-          set -x
-          set -u
-          set -e
-
-          if ! command -v nearwash >/dev/null; then
-            pip install git+https://github.com/gkwa/nearwash.git
-          fi
-
-    - name: Run script /opt/colorfulwest/install_nearwash.sh
-      ansible.builtin.command: /opt/colorfulwest/install_nearwash.sh
-      register: script_result
-
-    - name: Report exit code
-      ansible.builtin.debug:
-        msg: 'Script exited with code: {{ script_result.rc }}'
-
-    - name: Get IP using nearwash search
-      ansible.builtin.command: nearwash search
-      register: nearwash_output
-
-    - name: Set fact for IP
-      ansible.builtin.set_fact:
-        ip: '{{ nearwash_output.stdout }}'
-
-    - name: Get IPs into comma seperated list
-      ansible.builtin.shell: >
-        ifconfig | grep -v inet6 | grep inet | awk '{print $2}' | sort -V | tr '\n' ',' | sed 's/,$//'
-      register: ips_output
-
     - name: Create /opt/colorfulwest/curl_test.sh
       ansible.builtin.copy:
         dest: /opt/colorfulwest/curl_test.sh
@@ -203,14 +168,13 @@
 
           openssl pkcs12 -in /etc/elasticsearch/elastic-stack-ca.p12 -out /etc/elasticsearch/cert.crt -clcerts -nokeys -passin pass:MyPa55word
 
-          if [[ ! -f /tmp/nearwash.txt ]]; then
-              nearwash report >/tmp/nearwash.txt
-          fi
-
-          grep -i ipv4 /tmp/nearwash.txt | grep -oE 'IPAddress: [^ ]*' | cut -d: -f2 | tr -d ' ' | sort -u |
+          jsfile=$(mktemp /tmp/eachdodge-XXXX.json)
+          eachdodge ips2 --outfile=$jsfile
+          jq --raw-output '.[] | select(.ipVersion == "IPv4") | .ip' $jsfile |
               while read ip; do
                   curl --connect-timeout 1 --cacert /etc/elasticsearch/cert.crt -u elastic:$ELASTIC_PASSWORD https://$ip:9200
               done
+          rm -f $jsfile
 
     - name: Create script /opt/colorfulwest/elasticsearch_certutil.sh
       ansible.builtin.copy:
@@ -222,11 +186,6 @@
           set -x
           set -u
           set -e
-
-          if ! command -v eachdodge &>/dev/null; then
-            curl -sSL https://github.com/gkwa/eachdodge/releases/latest/download/eachdodge_Linux_x86_64.tar.gz | tar -C /usr/local/bin --no-same-owner -xz eachdodge
-            eachdodge version
-          fi
 
           jsfile=$(mktemp /tmp/eachdodge-XXXX.json)
           eachdodge ips2 --outfile=$jsfile
