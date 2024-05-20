@@ -187,12 +187,12 @@
           set -u
           set -e
 
-          jsfile=$(mktemp /tmp/eachdodge-XXXX.json)
-          eachdodge ips2 --outfile=$jsfile
           ips=$(
-            jq --raw-output '.[] | select(.ipVersion == "IPv4") | .ip' $jsfile |
+            eachdodge --out=json |
+            jq --raw-output '.[] | select(.ipVersion == "IPv4") | .ip' |
             jq --raw-input . | jq --raw-output --slurp 'join(",")'
           )
+
           echo $ips # 172.17.0.1,15.156.100.61
           dns="{{ ansible_hostname }},$ips"
 
