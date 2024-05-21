@@ -84,17 +84,15 @@
           vim /etc/elasticsearch/elasticsearch.yml
           yq -i 'del(."cluster.initial_master_nodes")' /etc/elasticsearch/elasticsearch.yml && yq -i '.cluster.initial_master_nodes = ["'`hostname`'"]' /etc/elasticsearch/elasticsearch.yml && cue export --out=yaml /etc/elasticsearch/elasticsearch.yml
 
-    - name: Check if eachdodge is installed
-      ansible.builtin.command: command -v eachdodge
-      register: eachdodge_installed
-      ignore_errors: true
-
-    - name: Install eachdodge
+    - name: Check if command exists and install if not
       ansible.builtin.shell: |
-        url=https://github.com/gkwa/eachdodge/releases/latest/download/eachdodge_Linux_x86_64.tar.gz
-        curl -sSL $url | tar -C /usr/local/bin --no-same-owner -xz eachdodge
-        eachdodge version
-      when: eachdodge_installed.rc != 0
+        if ! command -v eachdodge >/dev/null 2>&1; then
+          url=https://github.com/gkwa/eachdodge/releases/latest/download/eachdodge_Linux_x86_64.tar.gz
+          curl -sSL $url | tar -C /usr/local/bin --no-same-owner -xz eachdodge
+          eachdodge version
+        fi
+      args:
+        executable: /bin/bash
 
     - name: Create directory /opt/colorfulwest/
       ansible.builtin.file:
